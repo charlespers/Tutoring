@@ -1,0 +1,204 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  role          String    // STUDENT | TEACHER
+  onboardingComplete Boolean @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Student relations
+  studentClasses    ClassEnrollment[]
+  submissions       Submission[]
+  masteryProgress   MasteryProgress[]
+  streaks           Streak[]
+  badges            UserBadge[]
+
+  // Teacher relations
+  taughtClasses     Class[]           @relation("TeacherClasses")
+  createdQuestions  Question[]        @relation("QuestionCreator")
+  createdResources  Resource[]        @relation("ResourceCreator")
+  createdTemplates  AssignmentTemplate[]
+}
+
+model Class {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  inviteCode  String   @unique
+  teacherId   String
+  teacher     User    @relation("TeacherClasses", fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollments  ClassEnrollment[]
+  assignments  Assignment[]
+}
+
+model ClassEnrollment {
+  id        String   @id @default(cuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([classId, studentId])
+}
+
+model Question {
+  id          String     @id @default(cuid())
+  section     String     // READING_WRITING | MATH
+  domain      String     // e.g. "Algebra", "Information and Ideas"
+  skill       String     // e.g. "Linear equations"
+  difficulty  String     // FOUNDATIONS | MEDIUM | ADVANCED
+  content     String     // Question text/passage
+  passage     String?    // For R&W: 25-150 word passage
+  options     String     // JSON array of choices
+  answer      String     // Correct answer key
+  explanation String?
+  questionType String    @default("multiple_choice") // multiple_choice | grid_in
+  createdAt   DateTime   @default(now())
+  createdById String?
+  createdBy   User?      @relation("QuestionCreator", fields: [createdById], references: [id])
+
+  assignmentQuestions AssignmentQuestion[]
+}
+
+model Assignment {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueAt       DateTime?
+  classId     String?
+  class       Class?   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacherId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions    AssignmentQuestion[]
+  submissions  Submission[]
+}
+
+model AssignmentQuestion {
+  id           String     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  order        Int
+
+  @@unique([assignmentId, questionId])
+}
+
+model Submission {
+  id           String   @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers      String   // JSON: { questionId: answer }
+  score        Int?     // Number correct
+  totalQuestions Int
+  completedAt  DateTime @default(now())
+  teacherFeedback String?
+
+  submissionItems SubmissionItem[]
+}
+
+model SubmissionItem {
+  id           String    @id @default(cuid())
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  questionId   String
+  answer       String
+  isCorrect    Boolean
+
+  @@unique([submissionId, questionId])
+}
+
+model MasteryProgress {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  domain     String
+  skill      String
+  section    String   // READING_WRITING | MATH
+  level      Int      @default(0) // 0-100 mastery
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studentId, domain, skill])
+}
+
+model BadgeDefinition {
+  id          String @id @default(cuid())
+  name        String
+  description String
+  icon        String
+
+  userBadges  UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     BadgeDefinition @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt  DateTime @default(now())
+}
+
+model AssignmentTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  teacherId   String
+  teacher     User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  config      String   // JSON: domain, difficulty, count
+  createdAt   DateTime @default(now())
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  type        String   // pdf | link | video
+  url         String
+  teacherId   String
+  teacher    User     @relation("ResourceCreator", fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  resourceAssignments ResourceAssignment[]
+}
+
+model ResourceAssignment {
+  id         String   @id @default(cuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  classId    String?
+  studentId  String?
+  createdAt  DateTime @default(now())
+}
+
+model Streak {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  count     Int      @default(1)
+
+  @@unique([userId, date], name: "userId_date")
+}
